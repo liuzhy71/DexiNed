@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as f
+from utils.learnable_sigmoid import LearnableSigmoid
 
 
 def weight_init(m):
@@ -49,7 +50,8 @@ class _DenseLayer(nn.Sequential):
         super(_DenseLayer, self).__init__()
 
         # self.add_module('relu2', nn.ReLU(inplace=True)),
-        self.add_module('conv1', nn.Conv2d(input_features, out_features, kernel_size=(3, 3), stride=(1, 1), padding=2, bias=True)),
+        self.add_module('conv1', nn.Conv2d(input_features, out_features, kernel_size=(3, 3), stride=(1, 1), padding=2,
+                                           bias=True)),
         self.add_module('norm1', nn.BatchNorm2d(out_features)),
         self.add_module('relu1', nn.ReLU(inplace=True)),
         self.add_module('conv2', nn.Conv2d(out_features, out_features, kernel_size=(3, 3), stride=(1, 1), bias=True)),
@@ -94,8 +96,11 @@ class UpConvBlock(nn.Module):
             layers.append(nn.Conv2d(in_features, out_features, kernel_size=(1, 1)))
             layers.append(nn.ReLU(inplace=True))
             # layers.append(nn.Softmax())
-            layers.append(nn.ConvTranspose2d(out_features, out_features, kernel_size, stride=(2, 2), padding=(pad, pad)))
+            layers.append(
+                nn.ConvTranspose2d(out_features, out_features, kernel_size, stride=(2, 2), padding=(pad, pad)))
+            # image size after convtranspose2d is size_output = (size_input - 1)*stride + padding - 2padding + outpadding
             in_features = out_features
+        layers.append(LearnableSigmoid())
         return layers
 
     def compute_out_features(self, idx, up_scale, res_features):
@@ -111,9 +116,11 @@ class SingleConvBlock(nn.Module):
         self.use_bn = use_bs
         self.conv = nn.Conv2d(in_features, out_features, kernel_size=(1, 1), stride=stride, bias=True)
         self.bn = nn.BatchNorm2d(out_features)
+        self.activation = LearnableSigmoid()
 
     def forward(self, x):
         x = self.conv(x)
+        x = self.activation(x)
         if self.use_bn:
             x = self.bn(x)
         return x
@@ -146,11 +153,11 @@ class DoubleConvBlock(nn.Module):
         return x
 
 
-class DexiNed(nn.Module):
+class DexiNed_learnable_sigmoid(nn.Module):
     """ Definition of the DXtrem network. """
 
     def __init__(self, arg):
-        super(DexiNed, self).__init__()
+        super(DexiNed_learnable_sigmoid, self).__init__()
         if arg.two_type:
             class_num = 3
         else:
@@ -183,7 +190,7 @@ class DexiNed(nn.Module):
         self.up_block_4 = UpConvBlock(in_features=512, up_scale=3, res_features=class_num)
         self.up_block_5 = UpConvBlock(in_features=512, up_scale=4, res_features=class_num)
         self.up_block_6 = UpConvBlock(in_features=256, up_scale=4, res_features=class_num)
-        self.block_cat = SingleConvBlock(6*class_num, 1*class_num, stride=1, use_bs=False)  # hed fusion method
+        self.block_cat = SingleConvBlock(6 * class_num, 1 * class_num, stride=1, use_bs=False)  # hed fusion method
         # self.block_cat = CoFusion(6,6)# cats fusion method
 
         self.apply(weight_init)
@@ -264,7 +271,7 @@ if __name__ == '__main__':
     test_input = torch.rand(batch_size, 3, img_height, img_width).to(device)
     # target = torch.rand(batch_size, 1, img_height, img_width).to(device)
     print(f"input shape: {test_input.shape}")
-    model = DexiNed().to(device)
+    model = DexiNed_learnable_sigmoid().to(device)
     output = model(test_input)
     print(f"output shapes: {[t.shape for t in output]}")
 
